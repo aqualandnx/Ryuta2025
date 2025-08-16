@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>マリオ風 横スクロールゲーム（iframe用）</title>
+<style>
+body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#87CEEB; }
+canvas { border:4px solid #333; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.2); background: linear-gradient(#87CEEB,#bfe9ff); display:block; }
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="520"></canvas>
+<script>
+// === Web Audio API & ゲームコード ===
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+
+const WORLD_W = 3200;
+const GRAV=0.6, MOVE=0.5, MAXS=5.0, JUMP=11.5, FRICTION=0.85;
+const player={x:80,y:0,w:36,h:48,vx:0,vy:0,onGround:false,jumps:0,color:'#ff5349'};
+const keys={left:false,right:false}; let jumpQueued=false;
+
+function playJumpSound(){ const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.type='square'; o.frequency.setValueAtTime(600,audioCtx.currentTime); g.gain.setValueAtTime(0.2,audioCtx.currentTime); o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.1);}
+function playGoalSound(){ const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.type='sine'; o.frequency.setValueAtTime(300,audioCtx.currentTime); g.gain.setValueAtTime(0.3,audioCtx.currentTime); o.connect(g).connect(audioCtx.destination); o.start(); o.frequency.exponentialRampToValueAtTime(900,audioCtx.currentTime+0.3); o.stop(audioCtx.currentTime+0.3);}
+
+let platforms=[
+{x:0,y:480,w:WORLD_W,h:40,color:'#4CAF50'},
+{x:220,y:420,w:120,h:20,color:'#8BC34A'}, {x:380,y:360,w:120,h:20,color:'#8BC34A'},
+{x:560,y:310,w:140,h:20,color:'#8BC34A'}, {x:760,y:270,w:120,h:20,color:'#8BC34A'},
+{x:980,y:420,w:150,h:20,color:'#7CB342'}, {x:1200,y:360,w:120,h:20,color:'#7CB342'},
+{x:1400,y:320,w:120,h:20,color:'#7CB342'}, {x:1600,y:280,w:120,h:20,color:'#7CB342'},
+{x:1820,y:420,w:160,h:20,color:'#689F38'}, {x:2050,y:360,w:180,h:20,color:'#689F38'},
+{x:2280,y:300,w:140,h:20,color:'#689F38'}, {x:2480,y:260,w:140,h:20,color:'#689F38'},
+{x:2700,y:420,w:240,h:20,color:'#558B2F'}, {x:2950,y:360,w:160,h:20,color:'#558B2F'}
+];
+
+let spikes=[{x:690,y:460,w:100,h:20},{x:1500,y:460,w:140,h:20},{x:2230,y:460,w:80,h:20}];
+let enemies=[
+{x:1050,y:450,w:40,h:30,vx:1.2,min:1000,max:1180},
+{x:1880,y:450,w:40,h:30,vx:-1.6,min:1820,max:1980},
+{x:560,y:280,w:40,h:30,vx:1.0,min:560,max:700},
+{x:1600,y:250,w:40,h:30,vx:-1.2,min:1520,max:1700},
+{x:2480,y:230,w:40,h:30,vx:1.8,min:2480,max:2620}
+];
+let goal={x:3080,y:320,r:18,got:false};
+let camX=0;
+
+function reset(){player.x=80;player.y=0;player.vx=0;player.vy=0;player.onGround=false;player.jumps=0;goal.got=false;}
+function rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+function tryJump(){if(player.onGround||player.jumps<2){player.vy=-JUMP;player.onGround=false;player.jumps++;playJumpSound();}}
+
+window.addEventListener('keydown',(e)=>{if(e.key==='ArrowLeft')keys.left=true;if(e.key==='ArrowRight')keys.right=true;if((e.key===' '||e.key==='ArrowUp')&&!e.repeat)jumpQueued=true;if(e.key.toLowerCase()==='r')reset();});
+window.addEventListener('keyup',(e)=>{if(e.key==='ArrowLeft')keys.left=false;if(e.key==='ArrowRight')keys.right=false;});
+
+function update(){
+if(keys.left)player.vx-=MOVE;else if(!keys.right)player.vx*=0.98;
+if(keys.right)player.vx+=MOVE;
+player.vx=Math.max(-MAXS,Math.min(MAXS,player.vx));
+if(jumpQueued){tryJump();jumpQueued=false;}
+player.vy+=GRAV;
+
+player.x+=player.vx;
+if(player.x<0){player.x=0;player.vx=0;}
+if(player.x+player.w>WORLD_W){player.x=WORLD_W-player.w;player.vx=0;}
+for(const p of platforms){const a={x:player.x,y:player.y,w:player.w,h:player.h};if(rectsOverlap(a,p)){if(player.vx>0)player.x=p.x-player.w;if(player.vx<0)player.x=p.x+p.w;player.vx=0;}}
+
+player.y+=player.vy;player.onGround=false;
+for(const p of platforms){const a={x:player.x,y:player.y,w:player.w,h:player.h};if(rectsOverlap(a,p)){if(player.vy>0){player.y=p.y-player.h;player.vy=0;player.onGround=true;player.jumps=0;}else if(player.vy<0){player.y=p.y+p.h;player.vy=0;}}}
+if(player.onGround)player.vx*=FRICTION;
+
+for(const s of spikes)if(rectsOverlap(player,s))reset();
+for(const e of enemies){e.x+=e.vx;if(e.x<e.min||e.x+e.w>e.max)e.vx*=-1;if(rectsOverlap(player,e)){const wasFalling=player.vy>0;const overlapY=(player.y+player.h)-e.y;if(wasFalling&&overlapY<16){player.vy=-JUMP*0.75;player.y=e.y-player.h-1;}else reset();}}
+
+if(!goal.got&&Math.hypot(player.x+player.w/2-goal.x,player.y+player.h/2-goal.y)<goal.r+player.w/2){goal.got=true;playGoalSound();alert('クリア！');}
+
+camX=player.x+player.w/2-canvas.width/2;
+camX=Math.max(0,Math.min(WORLD_W-canvas.width,camX));
+}
+
+function draw(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.save();ctx.translate(-camX,0);
+ctx.fillStyle='#a0d6ff';ctx.fillRect(0,320,WORLD_W,200);
+for(const p of platforms){ctx.fillStyle=p.color||'#8BC34A';ctx.fillRect(p.x,p.y,p.w,p.h);ctx.strokeStyle='rgba(0,0,0,.2)';ctx.strokeRect(p.x,p.y,p.w,p.h);}
+for(const s of spikes){ctx.fillStyle='#555';for(let x=s.x;x<s.x+s.w;x+=20){ctx.beginPath();ctx.moveTo(x,s.y+s.h);ctx.lineTo(x+10,s.y);ctx.lineTo(x+20,s.y+s.h);ctx.closePath();ctx.fill();}}
+for(const e of enemies){ctx.fillStyle='#6a3d9a';ctx.fillRect(e.x,e.y,e.w,e.h);ctx.fillStyle='#fff';ctx.fillRect(e.x+6,e.y+8,8,8);ctx.fillRect(e.x+e.w-14,e.y+8,8,8);}
+ctx.fillStyle=player.color;ctx.fillRect(player.x,player.y,player.w,player.h);
+if(!goal.got){ctx.beginPath();ctx.arc(goal.x,goal.y,goal.r,0,Math.PI*2);ctx.fillStyle='#FFD700';ctx.fill();ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=3;ctx.stroke();}
+ctx.restore();
+}
+
+function loop(){update();draw();requestAnimationFrame(loop);}
+loop();
+</script>
+</body>
+</html>
