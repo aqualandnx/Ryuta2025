@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>シューティングゲーム with ボス</title>
+<style>
+  body { margin: 0; overflow: hidden; background: black; }
+  canvas { display: block; margin: 0 auto; background: black; }
+  #score, #hp, #stage { position: absolute; color: white; font-family: sans-serif; font-size: 20px; }
+  #score { top: 10px; left: 10px; } #hp { top: 40px; left: 10px; } #stage { top: 70px; left: 10px; }
+</style>
+</head>
+<body>
+<div id="score">Score: 0</div>
+<div id="hp">HP: 10</div>
+<div id="stage">Stage: 1</div>
+<canvas id="gameCanvas" width="400" height="600"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreDisplay = document.getElementById('score');
+const hpDisplay = document.getElementById('hp');
+const stageDisplay = document.getElementById('stage');
+
+let score = 0, gameOver = false, frameCount = 0, stage = 1;
+const player = { x: canvas.width / 2 - 15, y: canvas.height - 60, width: 30, height: 30, speed: 5, bullets: [], hp: 10, powerLevel: 0 };
+const enemies = [], items = [];
+let enemiesDefeated = 0, boss = null;
+const bossBullets = [];
+const enemyBullets = [];
+const enemySpeed = 2;
+const keys = {};
+let bgStars = [];
+const starCount = 100;
+for(let i=0;i<starCount;i++){bgStars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:Math.random()*2+1});}
+
+class Bullet { constructor(x,y,speedX=0,speedY=-7,color='yellow'){this.x=x;this.y=y;this.width=5;this.height=10;this.speedX=speedX;this.speedY=speedY;this.color=color;} update(){this.x+=this.speedX;this.y+=this.speedY;} draw(){ctx.fillStyle=this.color;ctx.fillRect(this.x,this.y,this.width,this.height);} }
+class Enemy { constructor(x,y){this.x=x;this.y=y;this.width=30;this.height=30;} update(){this.y+=enemySpeed;} draw(){ctx.fillStyle='red';ctx.fillRect(this.x,this.y,this.width,this.height);} shoot(){if(frameCount % 300 === 0){const cx=this.x+this.width/2; const cy=this.y+this.height; const dx=player.x+player.width/2-cx; const dy=player.y+player.height/2-cy; const dist=Math.sqrt(dx*dx+dy*dy); const speed=4; enemyBullets.push(new Bullet(cx,cy,dx/dist*speed,dy/dist*speed,'white'));} } }
+class Boss { constructor(hp=20){this.x=canvas.width/2-50;this.y=50;this.width=100;this.height=50;this.health=hp; this.initialHealth=hp; this.dir=1;} draw(){ctx.fillStyle='purple';ctx.fillRect(this.x,this.y,this.width,this.height);ctx.fillStyle='green';ctx.fillRect(this.x,this.y-10,this.width*(this.health/this.initialHealth),5);} shoot(){const cx=this.x+this.width/2; const cy=this.y+this.height; const dx=player.x+player.width/2-cx; const dy=player.y+player.height/2-cy; const dist=Math.sqrt(dx*dx+dy*dy); const speed=5; bossBullets.push(new Bullet(cx,cy,dx/dist*speed,dy/dist*speed,'orange'));} update(){this.x += this.dir * 2; if(this.x <= 0 || this.x + this.width >= canvas.width) this.dir *= -1;} }
+class Item { constructor(x,y,type='power'){this.x=x;this.y=y;this.width=20;this.height=20;this.type=type;} update(){this.y+=2;} draw(){ctx.fillStyle=this.type==='power'?'cyan':'pink';ctx.fillRect(this.x,this.y,this.width,this.height);} }
+
+document.addEventListener('keydown',e=>keys[e.key]=true);
+document.addEventListener('keyup',e=>keys[e.key]=false);
+
+function spawnItem(type='power'){const x=Math.random()*(canvas.width-20); items.push(new Item(x,-20,type));}
+function nextStage(){stage++; stageDisplay.textContent='Stage: '+stage; enemiesDefeated=0; boss=new Boss(20+stage*5); items.length=0;}
+function drawBackground(){ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='white';for(let i=0;i<bgStars.length;i++){ctx.beginPath();ctx.arc(bgStars[i].x,bgStars[i].y,bgStars[i].size,0,Math.PI*2);ctx.fill(); bgStars[i].y+=1;if(bgStars[i].y>canvas.height) bgStars[i].y=0;}}
+
+function firePlayerBullets(){
+  const bullets = [];
+  const level = player.powerLevel;
+  const centerX = player.x + player.width/2;
+  const topY = player.y;
+  const spread = Math.min(level+1, 10);
+  const spacing = 10;
+  for(let i=0;i<spread;i++){
+    const offset = (i-(spread-1)/2)*spacing;
+    bullets.push(new Bullet(centerX+offset, topY));
+  }
+  return bullets;
+}
+
+function gameLoop(){
+  if(gameOver) return;
+  drawBackground();
+  if(keys['ArrowLeft']&&player.x>0)player.x-=player.speed;
+  if(keys['ArrowRight']&&player.x+player.width<canvas.width)player.x+=player.speed;
+  if(keys['ArrowUp']&&player.y>0)player.y-=player.speed;
+  if(keys['ArrowDown']&&player.y+player.height<canvas.height)player.y+=player.speed;
+  if(keys[' ']&&frameCount%10===0){
+    player.bullets.push(...firePlayerBullets());
+  }
+
+  for(let i=player.bullets.length-1;i>=0;i--){const b=player.bullets[i];b.update();b.draw();if(b.y+b.height<0)player.bullets.splice(i,1);}
+
+  if(!boss&&frameCount%60===0){const x=10+Math.random()*(canvas.width-40);enemies.push(new Enemy(x,-30));}
+
+  for(let ei=enemies.length-1;ei>=0;ei--){const e=enemies[ei];e.update();e.draw(); if(e){ e.shoot();}
+    for(let bi=player.bullets.length-1;bi>=0;bi--){const b=player.bullets[bi];if(b.x<e.x+e.width&&b.x+b.width>e.x&&b.y<e.y+e.height&&b.y+b.height>e.y){enemies.splice(ei,1);player.bullets.splice(bi,1);enemiesDefeated++;score+=10;if(enemiesDefeated===10)nextStage();break;}}}
+
+  if(frameCount%500===0)spawnItem(Math.random()<0.5?'power':'hp');
+  for(let i=items.length-1;i>=0;i--){const item=items[i];item.update();item.draw();if(item.x<player.x+player.width&&item.x+item.width>player.x&&item.y<player.y+player.height&&item.y+item.height>player.y){
+    if(item.type==='power'){player.powerLevel = Math.min(player.powerLevel+1,10);}
+    else if(item.type==='hp'){player.hp=Math.min(player.hp+5,10);} items.splice(i,1);}}
+
+  if(boss){
+    boss.update(); boss.draw(); 
+    if(frameCount % 60 === 0) boss.shoot();  // ボスは1秒ごとに攻撃
+    for(let bi=player.bullets.length-1;bi>=0;bi--){const b=player.bullets[bi];
+      if(boss && b.x<boss.x+boss.width && b.x+b.width>boss.x && b.y<boss.y+boss.height && b.y+b.height>boss.y){player.bullets.splice(bi,1); boss.health--; if(boss.health<=0){boss=null;score+=100;alert('ボスを倒した！次のステージへ！');}}}
+  }
+
+  // 敵とボスの弾判定
+  for(let i=enemyBullets.length-1;i>=0;i--){const b=enemyBullets[i]; b.update(); b.draw(); if(b.x<player.x+player.width && b.x+b.width>player.x && b.y<player.y+player.height && b.y+b.height>player.y){player.hp--; enemyBullets.splice(i,1); if(player.hp<=0){gameOver=true; alert('やられた！ゲームオーバー'); document.location.reload();}} if(b.y>canvas.height||b.y<0||b.x<0||b.x>canvas.width){enemyBullets.splice(i,1);}}
+  for(let i=bossBullets.length-1;i>=0;i--){const b=bossBullets[i]; b.update(); b.draw(); if(b.x<player.x+player.width && b.x+b.width>player.x && b.y<player.y+player.height && b.y+b.height>player.y){player.hp--; bossBullets.splice(i,1); if(player.hp<=0){gameOver=true; alert('やられた！ゲームオーバー'); document.location.reload();}} if(b.y>canvas.height||b.y<0||b.x<0||b.x>canvas.width){bossBullets.splice(i,1);}}
+
+  ctx.fillStyle='blue';ctx.fillRect(player.x,player.y,player.width,player.height);
+  scoreDisplay.textContent='Score: '+score;
+  hpDisplay.textContent='HP: '+player.hp;
+  frameCount++; requestAnimationFrame(gameLoop);
+}
+gameLoop();
+</script>
+</body>
+</html>
